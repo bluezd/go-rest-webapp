@@ -1,0 +1,160 @@
+box:
+    id: $DOCKER_REGISTRY/$IMAGE_NAME
+    tag: $APP_TAG
+    registry: https://registry.hub.docker.com
+
+build:
+  steps:
+    - script:
+        name: copy files
+        code: |
+              ln -s ./rest.go /go/rest.go
+    - script:
+        name: check
+        code: |
+            pwd
+            ls -l
+            ls -l /
+            ls -l /pipeline/source/
+            env
+            echo $PATH
+            go version
+deploy:
+  steps:
+    - internal/docker-push:
+        username: $DOCKER_USERNAME
+        password: $DOCKER_PASSWORD
+        tag: $WERCKER_MAIN_PIPELINE_STARTED
+        #tag: wercker
+        repository: $DOCKER_REGISTRY/$APP_NAME
+        registry: https://registry.hub.docker.com
+    - script:
+        name: deploy
+        code: |
+                set -ex
+
+                function verify_deployments()
+                {
+                   TRY=0
+                   MAX_TRIES=15
+                   WAIT_SECONDS=10
+                   HEALTHY=0
+                   while [ $TRY -lt $MAX_TRIES ];
+                   do
+                      TRY=$(( $TRY + 1 ))
+                      RESPONSE=$(curl -ks -XGET -H "Authorization: Bearer ${API_TOKEN}" ${SERVICE_MANAGER}/api/v2/deployments/${1}-${2} | recode html..ascii | jq ".deployment | .current_state == .desired_state")
+
+                      if [ "$RESPONSE" == "true" ]; then
+                          HEALTHY=1
+                          break
+                      fi
+                      echo "== Current and desired state of deployment do not match. ${TRY} of ${MAX_TRIES} tries. =="
+                      sleep $WAIT_SECONDS
+                   done
+
+                   if [ $HEALTHY -gt 0 ]; then
+                       echo "== Current and desired state of deployment match. success. =="
+                   else
+                       echo "!! Tried ${MAX_TRIES} times but deployment is not healthy. !!"
+                       exit 1
+                   fi
+                }
+
+                # ------------------------------------
+                # Step 1: Remove the Deployments
+                # ------------------------------------
+                deploy_ids=$(curl -sk -X "GET" -H "Authorization: Bearer ${API_TOKEN}" "${SERVICE_MANAGER}/api/v2/deployments/" | jq ".deployments"[]".deployment_id" | tr -d '"')
+                for deployID in $deploy_ids; do
+                   prefix=`echo $deployID | awk -F"-" '{ print $1}'`
+                   if [[ $prefix == "go-rest-webservice" ]]; then
+                      # verify deployment exist or not
+                      HTTP_CODE=$(curl -ks -XGET -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${API_TOKEN}" ${SERVICE_MANAGER}/api/v2/deployments/${deployID})
+                      if [ $HTTP_CODE -eq 404 ]; then
+                          continue
+                      else
+                         # First, the deployment must be stopped;
+                         echo "## Stop $deployID ##"
+                         curl -ks -XPOST -H "Authorization: Bearer ${API_TOKEN}" ${SERVICE_MANAGER}/api/v2/deployments/${deployID}/stop
+
+                         # Make sure it has stopped
+                         TRY=0
+                         MAX_TRIES=30
+                         WAIT_SECONDS=10
+                         STOPPED=0
+                         while [ $TRY -lt $MAX_TRIES ]; do
+                                 TRY=$(( $TRY + 1 ))
+                                 RESPONSE=$(curl -ks -XGET -H "Authorization: Bearer ${API_TOKEN}" ${SERVICE_MANAGER}/api/v2/deployments/${deployID} | recode html..ascii | jq ".deployment | .current_state == .desired_state")
+
+                                 if [ "$RESPONSE" == "true" ]; then
+                                         STOPPED=1
+                                         break
+                                 fi
+                                 echo "Current and desired state of deployment do not match. ${TRY} of ${MAX_TRIES} tries."
+                                 sleep $WAIT_SECONDS
+                         done
+
+                         if [ $STOPPED -gt 0 ]; then
+                                 # Finally, remove the deployment, and reset the ID
+                                 echo "## Original deployment has stopped. Removing the deployment for ${deployID}."
+
+                                 TRY=0
+                                 MAX_TRIES=30
+                                 WAIT_SECONDS=10
+                                 REMOVED=0
+                                 while [ $TRY -lt $MAX_TRIES ]; do
+                                         TRY=$(( $TRY + 1 ))
+                                         RESPONSE=$(curl -k -s -XDELETE -H "Authorization: Bearer ${API_TOKEN}" ${SERVICE_MANAGER}/api/v2/deployments/${deployID})
+                                         ERROR_COUNT=$(echo ${RESPONSE} | recode html..ascii | jq -r ".errors | length")
+
+                                         if [ $ERROR_COUNT -gt 0 ]; then
+                                         ERRORS=$(echo ${RESPONSE} | recode html..ascii | jq ".errors[].message")
+                                                 echo "${TRY} of ${MAX_TRIES} removal tries. ${ERRORS}"
+                                         else
+                                                 REMOVED=1
+                                                 break
+                                         fi
+                                         sleep $WAIT_SECONDS
+                                 done
+
+                                 if [ $REMOVED -gt 0 ]; then
+                                         echo "## Deployment ${deployID} has been removed. ##"
+                                 else
+                                         echo "## Checked ${MAX_TRIES} times but ${deployID} is not removed. You may need to remove it manually. ##"
+                                 fi
+                         else
+                                 echo "Checked ${MAX_TRIES} times but deployment is not stopped. You may need to stop it manually."
+                         fi
+                      fi
+                   fi
+                done
+
+                # ------------------------------------
+                # Step 2: Deploy go-rest-webservice 
+                # ------------------------------------
+                TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+                POSTDATA=$(cat <<ENDOFTEMPLATE
+                {
+                  "deployment_id": "go-rest-webservice-${TIMESTAMP}",
+                  "deployment_name": "go-rest-webservice ${WERCKER_MAIN_PIPELINE_STARTED}",
+                  "desired_state": 1,
+                  "placement": {
+                    "pool_id": "default"
+                  },
+                  "quantities": {
+                    "go-rest-webservice": 1
+                  },
+                  "stack": {
+                    "service_id": "go-rest-webservice",
+                    "service_name": "go-rest-webservice",
+                    "subtype": "service",
+                    "content": "version: 2\nservices:\n  go-rest-webservice:\n    image: \"bluezd/go-rest-webservice:${WERCKER_MAIN_PIPELINE_STARTED}\"\n    environment:\n      - 'occs:availability=per-tag'\n      - 'occs:availability_context=worker-1'\n      - 'occs:scheduler=random'\n    ports:\n      - '8080:8080/tcp'\n    command: ${DOCKER_CMD}\n"
+                  }
+                }
+                ENDOFTEMPLATE
+                )
+
+                echo "## starting deploy go-rest-webservice app ##"
+                curl -k -XPOST -H "Authorization: Bearer ${API_TOKEN}" -d "${POSTDATA}" ${SERVICE_MANAGER}/api/v2/deployments/
+
+                verify_deployments "go-rest-webservice" $TIMESTAMP

@@ -29,7 +29,7 @@ deploy:
         tag: $WERCKER_MAIN_PIPELINE_STARTED
         #tag: wercker
         repository: $DOCKER_REGISTRY/$APP_NAME
-        registry: https://registry.hub.docker.com
+        registry: https://registry.hub.docker.com/v2/
     - script:
         name: deploy
         code: |

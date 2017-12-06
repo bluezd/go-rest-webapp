@@ -6,7 +6,7 @@ box:
 build:
   steps:
     - script:
-        name: copy files
+        name: install go libraries
         code: |
               go get github.com/gorilla/mux
               ln -s ./rest.go /go/rest.go
@@ -14,12 +14,13 @@ build:
         name: check
         code: |
             pwd
-            ls -l
             ls -l /
             ls -l /pipeline/source/
             env
             echo $PATH
             go version
+            ls -l /go/
+            go list github.com/gorilla/mux
 deploy:
   steps:
     - internal/docker-push:

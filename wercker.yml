@@ -9,7 +9,7 @@ build:
         name: install go libraries
         code: |
               go get github.com/gorilla/mux
-              ln -s ./rest.go /go/rest.go
+              ln -s /pipeline/source/rest.go /go/rest.go
     - script:
         name: check
         code: |

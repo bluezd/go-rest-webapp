@@ -9,7 +9,6 @@ build:
         name: install go libraries
         code: |
               go get github.com/gorilla/mux
-              ln -s /pipeline/source/rest.go /go/rest.go
     - script:
         name: check
         code: |
@@ -19,7 +18,6 @@ build:
             env
             echo $PATH
             go version
-            ls -l /go/
             go list github.com/gorilla/mux
             jq --version
             recode --version
@@ -69,8 +67,8 @@ deploy:
                 # ------------------------------------
                 deploy_ids=$(curl -sk -X "GET" -H "Authorization: Bearer ${API_TOKEN}" "${SERVICE_MANAGER}/api/v2/deployments/" | jq ".deployments"[]".deployment_id" | tr -d '"')
                 for deployID in $deploy_ids; do
-                   prefix=`echo $deployID | awk -F"-" '{ print $1}'`
-                   if [[ $prefix == "go-rest-webservice" ]]; then
+                   prefix=`echo $deployID | awk -F"-[0-9]" '{ print $1}'`
+                   if [[ $prefix == "go-rest-webapp" ]]; then
                       # verify deployment exist or not
                       HTTP_CODE=$(curl -ks -XGET -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${API_TOKEN}" ${SERVICE_MANAGER}/api/v2/deployments/${deployID})
                       if [ $HTTP_CODE -eq 404 ]; then
@@ -133,32 +131,32 @@ deploy:
                 done
 
                 # ------------------------------------
-                # Step 2: Deploy go-rest-webservice 
+                # Step 2: Deploy go-rest-webapp
                 # ------------------------------------
                 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 
                 POSTDATA=$(cat <<ENDOFTEMPLATE
                 {
-                  "deployment_id": "go-rest-webservice-${TIMESTAMP}",
-                  "deployment_name": "go-rest-webservice ${WERCKER_MAIN_PIPELINE_STARTED}",
+                  "deployment_id": "go-rest-webapp-${TIMESTAMP}",
+                  "deployment_name": "go-rest-webapp ${WERCKER_MAIN_PIPELINE_STARTED}",
                   "desired_state": 1,
                   "placement": {
                     "pool_id": "default"
                   },
                   "quantities": {
-                    "go-rest-webservice": 1
+                    "go-rest-webapp": 1
                   },
                   "stack": {
-                    "service_id": "go-rest-webservice",
-                    "service_name": "go-rest-webservice",
+                    "service_id": "go-rest-webapp",
+                    "service_name": "go-rest-webapp",
                     "subtype": "service",
-                    "content": "version: 2\nservices:\n  go-rest-webservice:\n    image: \"bluezd/go-rest-webservice:${WERCKER_MAIN_PIPELINE_STARTED}\"\n    environment:\n      - 'occs:availability=per-tag'\n      - 'occs:availability_context=worker-1'\n      - 'occs:scheduler=random'\n    ports:\n      - '8080:8080/tcp'\n    command: ${DOCKER_CMD}\n"
+                    "content": "version: 2\nservices:\n  go-rest-webapp:\n    image: \"bluezd/go-rest-webapp:${WERCKER_MAIN_PIPELINE_STARTED}\"\n    environment:\n      - 'occs:availability=per-tag'\n      - 'occs:availability_context=worker-1'\n      - 'occs:scheduler=random'\n    ports:\n      - '8080:8080/tcp'\n    command: ${DOCKER_CMD}\n"
                   }
                 }
                 ENDOFTEMPLATE
                 )
 
-                echo "## starting deploy go-rest-webservice app ##"
+                echo "## starting deploy go-rest-webapp app ##"
                 curl -k -XPOST -H "Authorization: Bearer ${API_TOKEN}" -d "${POSTDATA}" ${SERVICE_MANAGER}/api/v2/deployments/
 
-                verify_deployments "go-rest-webservice" $TIMESTAMP
+                verify_deployments "go-rest-webapp" $TIMESTAMP

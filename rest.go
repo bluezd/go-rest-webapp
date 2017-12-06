@@ -1,24 +1,24 @@
 package main
 
 import (
-	"log"
-	"fmt"
-	"net/http"
 	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
 
 	"github.com/gorilla/mux"
 )
 
 type Person struct {
-	ID		string `json:"id,omitempty"`
-	FirstName	string `json:"firstname,omitempty"`
-	LastName	string `json:"lastname,omitempty"`
-	Address		*Address `json:"address,omitempty"`
+	ID        string   `json:"id,omitempty"`
+	FirstName string   `json:"firstname,omitempty"`
+	LastName  string   `json:"lastname,omitempty"`
+	Address   *Address `json:"address,omitempty"`
 }
 
 type Address struct {
-	City		string `json:"city,omitempty"`
-	State		string `json:"state,omitempty"`
+	City  string `json:"city,omitempty"`
+	State string `json:"state,omitempty"`
 }
 
 var people = make([]Person, 0, 10)
@@ -38,7 +38,7 @@ func main() {
 }
 
 func GetPeople(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Welcome to Go REST Web Application V1 !\n")
+	fmt.Fprintf(w, "Welcome to Go REST Web Application V2 !\n")
 
 	json.NewEncoder(w).Encode(people)
 }
@@ -62,7 +62,6 @@ func CreatePerson(w http.ResponseWriter, r *http.Request) {
 	people = append(people, person)
 	json.NewEncoder(w).Encode(people)
 }
-
 
 func DeletePerson(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)

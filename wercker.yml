@@ -21,6 +21,8 @@ build:
             go version
             ls -l /go/
             go list github.com/gorilla/mux
+            jq --version
+            recode --version
 deploy:
   steps:
     - internal/docker-push:

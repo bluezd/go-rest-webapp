@@ -8,6 +8,7 @@ build:
     - script:
         name: copy files
         code: |
+              go get github.com/gorilla/mux
               ln -s ./rest.go /go/rest.go
     - script:
         name: check

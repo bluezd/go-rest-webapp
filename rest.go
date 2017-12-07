@@ -38,7 +38,7 @@ func main() {
 }
 
 func GetPeople(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Welcome to Go REST Web Application V2 !\n")
+	fmt.Fprintf(w, "Welcome to Go REST Web Application V3 !\n")
 
 	json.NewEncoder(w).Encode(people)
 }
